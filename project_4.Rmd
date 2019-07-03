@@ -1,0 +1,392 @@
+---
+title: "DATA612 Project 4"
+author: "Michael O'Donnell"
+date: "June 14, 2019"
+output: html_document
+---
+
+# Overview:
+In the following R code, two recommender systems are implemented on Jester5k data
+First, an Item-Based Collaborative Filtering recommender model
+Second, a User-Based Collaborative Filtering recommender model
+After both models are implemented, both models are evaluated
+
+### import libraries
+```{r warning=FALSE}
+library(recommenderlab)
+library(ggplot2)
+set.seed(1)
+```
+
+### import the Jester5k data
+```{r}
+data("Jester5k")
+Jester5k
+```
+
+### View the size of the Jester5k data
+```{r}
+object.size(Jester5k)
+object.size(as(Jester5k, "matrix"))
+```
+
+### number of ratings per user
+```{r}
+summary(rowCounts(Jester5k))
+```
+
+Histogram of all ratings
+```{r}
+hist(getRatings(Jester5k), main="Distribution of ratings from -10 to 10")
+```
+
+### 'best' joke with highest average rating
+```{r}
+best <- which.max(colMeans(Jester5k))
+cat(JesterJokes[best])
+```
+
+### 'worst' joke with lowest average rating
+```{r}
+worst <- which.min(colMeans(Jester5k))
+cat(JesterJokes[worst])
+```
+
+### converting the matrix into vector to see values
+```{r}
+vector_ratings <- as.vector(Jester5k@data)
+#unique(vector_ratings)
+#table(vector_ratings)
+```
+
+### removing the null values and turning vector into factors
+```{r}
+vector_ratings <- vector_ratings[vector_ratings != 0]
+vector_ratings <- factor(vector_ratings)
+
+qplot(vector_ratings)
+```
+
+### calculating and visualizing which jokes have been rated
+```{r}
+ratings_per_joke <- colCounts(Jester5k)
+
+table_of_jokes <- data.frame(
+  joke = names(ratings_per_joke),
+  ratings = ratings_per_joke
+)
+
+table_of_jokes <- table_of_jokes[order(table_of_jokes$ratings,
+                                 decreasing = TRUE), ]
+
+table_of_jokes[1:25, ]
+```
+
+### visualizing the average joke score
+```{r}
+average_ratings <- colMeans(Jester5k)
+
+qplot(average_ratings) +
+  stat_bin(bins = 20)
+  ggtitle("average joke rating")
+```
+
+### view the average ratings of only jokes with 100 ratings minimum
+```{r}
+average_ratings_min100 <- average_ratings[ratings_per_joke >= 100]
+
+qplot(average_ratings_min100) +
+  stat_bin(bins = 10) +
+  ggtitle("Average joke rating (minimum 100)")
+```
+
+### selecting only jokes with enough ratings and power users
+```{r}
+# greater than 100 ratings
+# only accounting for users that have rated at least 50 jokes
+ratings_jokes <- Jester5k[rowCounts(Jester5k) > 50,
+                             colCounts(Jester5k) > 100]
+ratings_jokes
+
+#average ratings per user
+avg_ratings_user <- rowMeans(ratings_jokes)
+```
+
+### splitting the data into training and testing sets
+```{r}
+which_train <- sample(x = c(TRUE, FALSE), size = nrow(ratings_jokes),
+                      replace = TRUE, prob = c(0.8, 0.2))
+
+train <- ratings_jokes[which_train, ]
+test <- ratings_jokes[!which_train, ]
+```
+
+### use k-fold to split the users into 5 groups
+```{r}
+which_set <- sample(x = 1:5, size=nrow(ratings_jokes),
+                    replace = TRUE)
+for(i in 1:5) {
+  which_train <- which_set == i
+  train <- ratings_jokes[which_train, ]
+  test <- ratings_jokes[!which_train, ]
+}
+```
+
+### establishing the Item Based Collaborative Filtering recommender model
+```{r}
+model <- Recommender(data = train, method = "IBCF",
+                     parameter = list(k=30))
+model
+```
+
+### apply model onto the test set (IBCF model)
+```{r}
+# number of items to recommend
+n_recommend <- 5
+
+predicted <- predict(object = model, newdata = test, n = n_recommend)
+predicted
+```
+
+### see the list of recommended jokes for the first test user (IBCF model)
+```{r}
+test_user_one <- predicted@items[[1]]
+test_jokes_one <- predicted@itemLabels[test_user_one]
+test_jokes_one
+```
+
+### now, recommend jokes for each user in the test set (IBCF model)
+```{r}
+recommender_matrix <- sapply(predicted@items, function(x){
+  colnames(ratings_jokes)[x]
+})
+
+recommender_matrix[2:7]
+```
+### take out users without recommendations
+```{r}
+recommender_matrix_final <- c()
+for (i in 1:length(recommender_matrix)){
+  if (length(recommender_matrix[[i]]) == 5){
+    recommender_matrix_final <- c(recommender_matrix_final, recommender_matrix[[i]])
+  }
+}
+```
+
+### Now, to view the most frequently recommended jokes (IBCF model)
+```{r}
+items <- factor(table(recommender_matrix_final))
+items <- sort(items, decreasing = TRUE)
+top_items <- data.frame(names(items), items)
+head(top_items)
+```
+
+### We've implemented a IBCF model!
+
+### Now, we will implement a User Based Collaborative Filtering model
+(on the same data)
+```{r}
+model <- Recommender(data = train, method = "UBCF")
+model
+```
+
+### To view some more details of this model
+```{r}
+names(getModel(model))
+```
+
+### apply model onto the test set (UBCF model)
+```{r}
+# number of items to recommend
+n_recommend <- 5
+
+predicted <- predict(object = model, newdata = test, n = n_recommend)
+predicted
+```
+
+### see the list of recommended movies for the first test user (UBCF model)
+```{r}
+test_user_one <- predicted@items[[1]]
+test_jokes_one <- predicted@itemLabels[test_user_one]
+test_jokes_one
+```
+
+### now, recommend movies for each user in the test set (UBCF model)
+```{r}
+recommender_matrix <- sapply(predicted@items, function(x){
+  colnames(ratings_jokes)[x]
+})
+
+recommender_matrix[1:5]
+```
+
+### take out users without recommendations
+```{r}
+recommender_matrix_final <- c()
+for (i in 1:length(recommender_matrix)){
+  if (length(recommender_matrix[[i]]) == 5){
+    recommender_matrix_final <- c(recommender_matrix_final, recommender_matrix[[i]])
+  }
+}
+```
+
+### View the most frequently recommended movies (UBCF model)
+```{r}
+items <- factor(table(recommender_matrix_final))
+items <- sort(items, decreasing = TRUE)
+top_items <- data.frame(names(items), items)
+head(top_items)
+```
+
+Since we have now implemented both IBCF and UBCF systems,
+let's evaluate the models!
+
+### First, evaluating the IBCF model
+```{r}
+folds <- 4
+items_keep <- 15
+rating_threshold <- 3
+
+eval_sets <- evaluationScheme(data = ratings_jokes, method = 
+                                "cross-validation", k = folds,
+                              given = items_keep, goodRating = rating_threshold)
+
+eval_model <- "IBCF"
+parameters <- NULL
+
+eval_recommender <- Recommender(data = getData(eval_sets, "train"),
+                                method = eval_model, parameter = parameters)
+
+n_recommend <- 5
+
+eval_predicted <- predict(object = eval_recommender, newdata =
+                            getData(eval_sets, "known"), n=n_recommend,
+                          type = "ratings")
+
+eval_accuracy <- calcPredictionAccuracy(x = eval_predicted,
+                                        data = getData(eval_sets, 
+                                                       "unknown"),
+                                        byUser = FALSE)
+eval_accuracy
+```
+
+### Now, evaluating the UBCF model
+```{r}
+folds <- 4
+items_keep <- 15
+rating_threshold <- 3
+
+eval_sets <- evaluationScheme(data = ratings_jokes, method = 
+                                "cross-validation", k = folds,
+                              given = items_keep, goodRating = rating_threshold)
+
+eval_model <- "UBCF"
+parameters <- NULL
+
+eval_recommender <- Recommender(data = getData(eval_sets, "train"),
+                                method = eval_model, parameter = parameters)
+
+n_recommend <- 5
+
+eval_predicted <- predict(object = eval_recommender, newdata =
+                            getData(eval_sets, "known"), n=n_recommend,
+                          type = "ratings")
+
+eval_accuracy <- calcPredictionAccuracy(x = eval_predicted,
+                                        data = getData(eval_sets, 
+                                                       "unknown"),
+                                        byUser = FALSE)
+eval_accuracy
+```
+
+### Now, to change the parameters of the UBCF to attain more diversity
+```{r}
+model <- Recommender(data = train, method = "UBCF",
+                     parameter = list(method = "Euclidean", nn = 10, normalize = "Z-score"))
+model
+```
+
+### To view some more details of this model
+```{r}
+names(getModel(model))
+```
+
+### apply model onto the test set (UBCF model)
+```{r}
+# number of items to recommend
+n_recommend <- 5
+
+predicted <- predict(object = model, newdata = test, n = n_recommend)
+predicted
+```
+
+### see the list of recommended movies for the first test user (UBCF model)
+```{r}
+test_user_one <- predicted@items[[1]]
+test_jokes_one <- predicted@itemLabels[test_user_one]
+test_jokes_one
+```
+
+### now, recommend movies for each user in the test set (UBCF model)
+```{r}
+recommender_matrix <- sapply(predicted@items, function(x){
+  colnames(ratings_jokes)[x]
+})
+
+recommender_matrix[1:5]
+```
+
+### take out users without recommendations
+```{r}
+recommender_matrix_final <- c()
+for (i in 1:length(recommender_matrix)){
+  if (length(recommender_matrix[[i]]) == 5){
+    recommender_matrix_final <- c(recommender_matrix_final, recommender_matrix[[i]])
+  }
+}
+```
+
+### View the most frequently recommended movies (UBCF model)
+```{r}
+items <- factor(table(recommender_matrix_final))
+items <- sort(items, decreasing = TRUE)
+top_items <- data.frame(names(items), items)
+head(top_items)
+```
+
+### Now, evaluating the UBCF model
+```{r}
+folds <- 4
+items_keep <- 15
+rating_threshold <- 3
+
+eval_sets <- evaluationScheme(data = ratings_jokes, method = 
+                                "cross-validation", k = folds,
+                              given = items_keep, goodRating = rating_threshold)
+
+eval_model <- "UBCF"
+parameters <- list(method = "Euclidean", nn = 10, normalize = "Z-score")
+
+eval_recommender <- Recommender(data = getData(eval_sets, "train"),
+                                method = eval_model, parameter = parameters)
+
+n_recommend <- 5
+
+eval_predicted <- predict(object = eval_recommender, newdata =
+                            getData(eval_sets, "known"), n=n_recommend,
+                          type = "ratings")
+
+eval_accuracy <- calcPredictionAccuracy(x = eval_predicted,
+                                        data = getData(eval_sets, 
+                                                       "unknown"),
+                                        byUser = FALSE)
+eval_accuracy
+```
+
+
+
+# Analysis
+The User-Based Collaborative Filtering recommender system outperformed the IBCF with accuracy rating
+Then, the parameters were changed in the UBCF to create more diversity or recommendations
+Which worked! It can be seen by the top recommended jokes, the top 5 jokes are less recommended
+So, the model is less top-heavy
